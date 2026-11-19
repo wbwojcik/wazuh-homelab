@@ -35,7 +35,7 @@ alert level >= 12  -> custom-email-alert   -> postfix -> inbox
 
 ## What's coming
 
-- [ ] Server setup: VM, WireGuard, firewall, Wazuh, first agent, swap
+- [x] [Server setup](docs/01-server-setup.md): VM, WireGuard, firewall, Wazuh, first agent, swap
 - [ ] Users and credentials
 - [ ] Email alerts: postfix relay, readable alert emails, daily vulnerability email
 - [ ] Windows logging: Sysmon, audit policy, PowerShell, Defender, USB events
