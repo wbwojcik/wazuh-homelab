@@ -1,0 +1,24 @@
+# Secrets - never commit
+.env
+*.env
+!.env.example
+*.pem
+*.key
+*.crt
+wazuh-install-files.tar
+wazuh-passwords.txt
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
