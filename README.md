@@ -36,7 +36,7 @@ alert level >= 12  -> custom-email-alert   -> postfix -> inbox
 ## What's coming
 
 - [x] [Server setup](docs/01-server-setup.md): VM, WireGuard, firewall, Wazuh, first agent, swap
-- [ ] Users and credentials
+- [x] [Users and credentials](docs/02-users-and-credentials.md)
 - [ ] Email alerts: postfix relay, readable alert emails, daily vulnerability email
 - [ ] Windows logging: Sysmon, audit policy, PowerShell, Defender, USB events
 - [ ] Noise tuning: quieting the harmless stuff
