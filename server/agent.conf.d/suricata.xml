@@ -1,0 +1,8 @@
+<!-- Append to /var/ossec/etc/shared/default/agent.conf. See docs/11-suricata.md.
+     Only for the laptop that runs Suricata (replace LAPTOP-1 with its agent name). -->
+<agent_config name="LAPTOP-1">
+  <localfile>
+    <location>C:\Program Files\Suricata\log\alerts.json</location>
+    <log_format>json</log_format>
+  </localfile>
+</agent_config>
