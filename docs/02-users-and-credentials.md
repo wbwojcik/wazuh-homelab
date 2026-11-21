@@ -13,7 +13,7 @@ screenshots. The docs here only say where each one is kept.
 | `wazuh-wui` (API) | Dashboard -> manager API | administrator | Password manager + `/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml` |
 | `wazuh` (API) | Built-in API admin | administrator | `/root/wazuh-install-files.tar` |
 | `claude-ro` (API) | Claude MCP server | readonly | Password manager + `mcp-server/.env` on the PC |
-| `claude-idx-ro` (indexer) | Claude MCP server (alerts, vulnerabilities) | read on two index patterns | Password manager + `mcp-server/.env` on the PC (MCP part, coming later) |
+| `claude-idx-ro` (indexer) | Claude MCP server (alerts, vulnerabilities) | read on two index patterns | Password manager + `mcp-server/.env` on the PC ([14](14-claude-mcp.md)) |
 | Enrollment password | New agents on 1515 | can register agents only | Password manager + `/var/ossec/etc/authd.pass` |
 | Mail relay app password | Postfix, for alert emails | sends mail as that account | Password manager + `/etc/postfix/sasl_passwd.db` ([03](03-email-alerts.md)) |
 
@@ -66,7 +66,7 @@ API tokens expire after 15 minutes. Get a new one if you see HTTP 401.
 | `wazuh-wui` | Change it in the API (above), and in `/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml`, then `systemctl restart wazuh-dashboard` |
 | Indexer `admin` | `bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/wazuh-passwords-tool.sh -u admin -p '<NEW>'` |
 | `claude-ro` | API (above), then update `mcp-server/.env` |
-| `claude-idx-ro` | Covered in the MCP part (coming later) |
+| `claude-idx-ro` | See [14](14-claude-mcp.md#maintenance) |
 
 As root, the indexer accepts the admin certificate, so you never need the indexer admin password on the
 command line:

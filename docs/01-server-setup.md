@@ -7,7 +7,7 @@ I only reach it over WireGuard. The two agent ports are the only thing open to t
 
 | Item | Notes |
 |---|---|
-| VM | Ubuntu 24.04, 4 GB RAM minimum (tight, but it works once old alerts are cleaned up, see the retention part coming later), 2 vCPU, 40+ GB disk. Any provider; a small cloud VM costs a few euros a month. Turn on the provider's backups. |
+| VM | Ubuntu 24.04, 4 GB RAM minimum (tight but works with the retention in [06](06-index-retention.md)), 2 vCPU, 40+ GB disk. Any provider; a small cloud VM costs a few euros a month. Turn on the provider's backups ([07](07-backups.md)). |
 | Your PC | Windows with the [WireGuard app](https://www.wireguard.com/install/) and OpenSSH (built in) |
 | Password manager | Every password in this guide goes there first |
 
@@ -164,7 +164,7 @@ free -h
 
 Check memory now and then with `free -h`. The indexer heap is 1 GB by default (`-Xms1g/-Xmx1g` in
 `/etc/wazuh-indexer/jvm.options`), about 75 % used is normal. The real fix for memory pressure on a small
-node is fewer shards (the retention part, coming later).
+node is fewer shards: see [06](06-index-retention.md).
 
 ## Daily use
 
