@@ -1,0 +1,20 @@
+<!-- Append to /var/ossec/etc/shared/default/agent.conf. See docs/12-browser-watch.md.
+     Browser extensions (one manifest.json per extension version) and native messaging host registry keys.
+     Replace LAPTOP-1 with your agent name and <USER_SID> with the laptop user's SID
+     (PowerShell: (Get-LocalUser $env:USERNAME).SID.Value). The agent runs as SYSTEM, so it can't see
+     HKCU: the user's keys are watched under HKEY_USERS\<USER_SID>. -->
+<agent_config name="LAPTOP-1">
+  <syscheck>
+    <directories realtime="yes" recursion_level="2" restrict="manifest.json$">C:\Users\*\AppData\Local\BraveSoftware\Brave-Browser\User Data\*\Extensions</directories>
+    <directories realtime="yes" recursion_level="2" restrict="manifest.json$">C:\Users\*\AppData\Local\Google\Chrome\User Data\*\Extensions</directories>
+    <directories realtime="yes" recursion_level="2" restrict="manifest.json$">C:\Users\*\AppData\Local\Microsoft\Edge\User Data\*\Extensions</directories>
+    <windows_registry arch="both">HKEY_LOCAL_MACHINE\SOFTWARE\Google\Chrome\NativeMessagingHosts</windows_registry>
+    <windows_registry arch="both">HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Edge\NativeMessagingHosts</windows_registry>
+    <windows_registry arch="both">HKEY_LOCAL_MACHINE\SOFTWARE\BraveSoftware\Brave-Browser\NativeMessagingHosts</windows_registry>
+    <windows_registry arch="both">HKEY_LOCAL_MACHINE\SOFTWARE\Mozilla\NativeMessagingHosts</windows_registry>
+    <windows_registry>HKEY_USERS\<USER_SID>\Software\Google\Chrome\NativeMessagingHosts</windows_registry>
+    <windows_registry>HKEY_USERS\<USER_SID>\Software\Microsoft\Edge\NativeMessagingHosts</windows_registry>
+    <windows_registry>HKEY_USERS\<USER_SID>\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts</windows_registry>
+    <windows_registry>HKEY_USERS\<USER_SID>\Software\Mozilla\NativeMessagingHosts</windows_registry>
+  </syscheck>
+</agent_config>
