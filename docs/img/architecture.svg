@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a5568"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2f6fde"/></marker>
+    <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/></marker>
+  </defs>
+  <rect width="1000" height="520" fill="#ffffff"/>
+  <text x="24" y="34" font-size="20" font-weight="700" fill="#1d2330">Wazuh homelab</text>
+  <text x="24" y="56" font-size="13" fill="#6a7383">One cloud VM, Windows laptops, email only when it matters</text>
+
+  <!-- PC -->
+  <rect x="24" y="90" width="230" height="150" rx="10" fill="#eef4ff" stroke="#2f6fde"/>
+  <text x="40" y="116" font-size="15" font-weight="700" fill="#1d2330">My PC</text>
+  <text x="40" y="136" font-size="12" fill="#4a5568">WireGuard 10.10.0.2</text>
+  <rect x="40" y="148" width="198" height="34" rx="6" fill="#fff" stroke="#b9cdf5"/>
+  <text x="52" y="170" font-size="12.5" fill="#1d2330">Browser: Wazuh dashboard</text>
+  <rect x="40" y="190" width="198" height="38" rx="6" fill="#fff" stroke="#b9cdf5"/>
+  <text x="52" y="206" font-size="12.5" fill="#1d2330">Claude desktop</text>
+  <text x="52" y="221" font-size="11.5" fill="#6a7383">+ read-only MCP server</text>
+
+  <!-- Laptops -->
+  <rect x="24" y="300" width="230" height="120" rx="10" fill="#f3f4f6" stroke="#9aa3b2"/>
+  <text x="40" y="326" font-size="15" font-weight="700" fill="#1d2330">Windows 11 laptops</text>
+  <text x="40" y="350" font-size="12.5" fill="#1d2330">Wazuh agent, Sysmon</text>
+  <text x="40" y="370" font-size="12.5" fill="#1d2330">USB guard, USB sandbox</text>
+  <text x="40" y="390" font-size="12.5" fill="#1d2330">Suricata (optional)</text>
+  <text x="40" y="410" font-size="11.5" fill="#6a7383">LAPTOP-1, LAPTOP-2</text>
+
+  <g transform="translate(30,0)">
+  <!-- VM -->
+  <rect x="340" y="80" width="330" height="410" rx="12" fill="#fbfbfc" stroke="#1d2330" stroke-width="1.5"/>
+  <text x="356" y="106" font-size="15" font-weight="700" fill="#1d2330">Cloud VM, Ubuntu 24.04, 4 GB</text>
+  <text x="356" y="124" font-size="12" fill="#4a5568">wg0 10.10.0.1, UFW, Wazuh 4.14 all-in-one</text>
+  <rect x="356" y="138" width="298" height="56" rx="7" fill="#eef4ff" stroke="#b9cdf5"/>
+  <text x="370" y="160" font-size="13" font-weight="600" fill="#1d2330">VPN only</text>
+  <text x="370" y="180" font-size="12" fill="#4a5568">SSH 22, dashboard 443, API 55000</text>
+  <rect x="356" y="206" width="298" height="56" rx="7" fill="#fff" stroke="#cfd5de"/>
+  <text x="370" y="228" font-size="13" font-weight="600" fill="#1d2330">Wazuh manager</text>
+  <text x="370" y="248" font-size="12" fill="#4a5568">agents 1514/1515, rules, noise tuning</text>
+  <rect x="356" y="274" width="298" height="56" rx="7" fill="#fff" stroke="#cfd5de"/>
+  <text x="370" y="296" font-size="13" font-weight="600" fill="#1d2330">Wazuh indexer</text>
+  <text x="370" y="316" font-size="12" fill="#4a5568">localhost:9200, alerts kept 90 days</text>
+  <rect x="356" y="350" width="140" height="56" rx="7" fill="#fff7ed" stroke="#f5b98a"/>
+  <text x="368" y="372" font-size="12.5" font-weight="600" fill="#1d2330">custom-email-</text>
+  <text x="368" y="388" font-size="12.5" font-weight="600" fill="#1d2330">alert</text>
+  <text x="410" y="388" font-size="11" fill="#6a7383">level 12+</text>
+  <rect x="514" y="350" width="140" height="56" rx="7" fill="#fff7ed" stroke="#f5b98a"/>
+  <text x="526" y="372" font-size="12.5" font-weight="600" fill="#1d2330">vuln digest</text>
+  <text x="526" y="390" font-size="11" fill="#6a7383">cron 06:00, one list</text>
+  <rect x="356" y="420" width="298" height="50" rx="7" fill="#fff7ed" stroke="#f5b98a"/>
+  <text x="370" y="450" font-size="13" font-weight="600" fill="#1d2330">postfix relay</text>
+  <text x="472" y="450" font-size="12" fill="#4a5568">loopback only, port 587 out</text>
+
+  </g>
+  <!-- Inbox -->
+  <rect x="770" y="380" width="210" height="80" rx="10" fill="#fff7ed" stroke="#c2410c"/>
+  <text x="786" y="406" font-size="15" font-weight="700" fill="#1d2330">Your inbox</text>
+  <text x="786" y="426" font-size="12" fill="#4a5568">via Gmail SMTP</text>
+  <text x="786" y="444" font-size="12" fill="#4a5568">subject "Wazuh Alert - ..."</text>
+
+  <!-- arrows -->
+  <path d="M254,165 L384,165" stroke="#2f6fde" stroke-width="2" fill="none" marker-end="url(#b)"/>
+  <text x="270" y="156" font-size="11.5" fill="#2f6fde">WireGuard</text>
+  <path d="M238,212 C310,212 310,302 384,302" stroke="#2f6fde" stroke-width="2" stroke-dasharray="6 4" fill="none" marker-end="url(#b)"/>
+  <text x="300" y="250" font-size="11.5" fill="#2f6fde" text-anchor="middle">SSH tunnel</text>
+  <text x="300" y="264" font-size="11.5" fill="#2f6fde" text-anchor="middle">to indexer</text>
+  <path d="M254,360 C320,360 320,234 384,234" stroke="#4a5568" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="262" y="440" font-size="11.5" fill="#4a5568">internet:</text>
+  <text x="262" y="454" font-size="11.5" fill="#4a5568">1514 agent keys</text>
+  <text x="262" y="468" font-size="11.5" fill="#4a5568">1515 password</text>
+  <path d="M535,262 L535,274" stroke="#4a5568" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <path d="M386,250 L378,250 L378,378 L384,378" stroke="#c2410c" stroke-width="2" fill="none" marker-end="url(#c)"/>
+  <path d="M614,330 L614,350" stroke="#c2410c" stroke-width="2" fill="none" marker-end="url(#c)"/>
+  <path d="M456,406 L456,420" stroke="#c2410c" stroke-width="2" fill="none" marker-end="url(#c)"/>
+  <path d="M614,406 L614,420" stroke="#c2410c" stroke-width="2" fill="none" marker-end="url(#c)"/>
+  <path d="M684,445 L770,425" stroke="#c2410c" stroke-width="2" fill="none" marker-end="url(#c)"/>
+</svg>

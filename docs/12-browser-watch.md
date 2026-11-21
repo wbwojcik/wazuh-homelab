@@ -30,6 +30,10 @@ Copy-Item C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe "$d\brave.ex
 Start-Sleep 5; Remove-Item -Recurse -Force $d
 ```
 
+The email looks like this (made-up example):
+
+<img src="img/email-browser.png" alt="Example email for a browser starting PowerShell" width="700">
+
 ## Extensions and native messaging hosts (100251, 100252)
 
 A native messaging host is a registry key naming a program that a browser extension may start. Password

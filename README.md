@@ -21,18 +21,20 @@ machines first. Not affiliated with Wazuh or Anthropic.
   vulnerabilities come once a day as a single list.
 - Old alerts are deleted after 90 days, which keeps a 4 GB box happy.
 
-```
-PC (WireGuard 10.10.0.2) ---- VPN ----> VM (wg0 10.10.0.1)
-                                          22     SSH          VPN only
-                                          443    dashboard    VPN only
-                                          55000  API          VPN only
-                                          9200   indexer      localhost only
-laptops (agent + Sysmon) -- internet -->  1514   agent data   open, agent keys
-                                          1515   enrollment   open, password
+![How it fits together](docs/img/architecture.svg)
 
-alert level >= 12  -> custom-email-alert   -> postfix -> inbox
-06:00 cron         -> wazuh-vuln-digest.py -/
-```
+Ports on the VM: 22 (SSH), 443 (dashboard) and 55000 (API) only over the VPN, 9200 (indexer) on
+localhost only, 1514/1515 open for the agents.
+
+## What the emails look like
+
+An alert email, here for a USB stick that was never plugged in before:
+
+<img src="docs/img/email-usb.png" alt="Example alert email for a new USB device" width="700">
+
+And the daily vulnerability email (the CVE numbers in this example are made up):
+
+<img src="docs/img/email-vulnerabilities.png" alt="Example daily vulnerability email" width="700">
 
 ## Docs
 

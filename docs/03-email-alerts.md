@@ -139,6 +139,9 @@ to update it, then what is new or fixed since the last email, then the CVE list.
 changed (the first run sends the full list). `NVD_MAX_LOOKUPS=150` in the cron line adds "update to
 version X" from NVD (slow: about 15 minutes on the first run, no API key).
 
+Examples: [new USB device](img/email-usb.png), [browser started PowerShell](img/email-browser.png),
+[daily vulnerability email](img/email-vulnerabilities.png).
+
 ## Different email settings per laptop
 
 Add `.<agent name>` to a key in `/var/ossec/etc/email-alert.conf`. No restart needed.
