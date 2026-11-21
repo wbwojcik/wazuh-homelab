@@ -1,0 +1,548 @@
+#!/var/ossec/framework/python/bin/python3
+"""
+Readable urgent-alert email for a Wazuh homelab (Wazuh custom integration).
+
+Wazuh's integrator runs this for every alert at <level> or above (ossec.conf <integration>),
+passing the path of a file with the alert JSON. It sends one email that starts with
+plain language (what happened, which laptop, why it matters, your options) and puts the
+raw log at the bottom. Mail goes through the local postfix relay (e.g. postfix -> Gmail -> your inbox).
+
+Install: /var/ossec/integrations/custom-email-alert  (root:wazuh, 750)
+Test:    custom-email-alert --dry-run alert.json     (prints instead of sending)
+
+Settings come from /var/ossec/etc/email-alert.conf (KEY=value lines, no secrets):
+  MAIL_FROM, MAIL_TO, MAX_PER_HOUR (default 10), REPEAT_MINUTES (default 30),
+  TIMEZONE (default UTC, e.g. Europe/Berlin), SKIP_RULES (default 23505,23506,100213: vulnerabilities
+  go in the daily digest instead)
+
+Per-laptop settings: add ".<agent name>" to a key (exact name as in agent_control -l):
+  MUTE.<agent>=yes            no emails at all for that agent (still logged in Wazuh)
+  SKIP_RULES.<agent>=100221   extra rules to skip for that agent only (added to SKIP_RULES)
+  MIN_LEVEL.<agent>=14        only email that agent's alerts at this level or higher
+  MAIL_TO.<agent>=a@b.c       send that agent's emails to another address
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from email.message import EmailMessage
+from email.utils import formataddr
+
+CONF = "/var/ossec/etc/email-alert.conf"
+STATE = "/var/ossec/tmp/email-alert-state.json"
+LOG = "/var/ossec/logs/integrations.log"
+SENDMAIL = "/usr/sbin/sendmail"
+
+
+# --- settings -----------------------------------------------------------------------------
+
+def load_conf(path=CONF):
+    conf = {"MAIL_FROM": "", "MAIL_TO": "", "MAX_PER_HOUR": "10", "REPEAT_MINUTES": "30",
+            "TIMEZONE": "UTC", "SKIP_RULES": "23505,23506,100213"}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    conf[k.strip()] = v.strip().strip('"')
+    except FileNotFoundError:
+        pass
+    return conf
+
+
+def log(msg):
+    try:
+        with open(LOG, "a") as f:
+            f.write(f"{datetime.now():%Y/%m/%d %H:%M:%S} custom-email-alert: {msg}\n")
+    except OSError:
+        pass
+
+
+# --- reading the alert ----------------------------------------------------------------------
+
+def get(d, path, default=""):
+    for part in path.split("."):
+        if isinstance(d, list) and part.isdigit() and int(part) < len(d):
+            d = d[int(part)]
+        elif isinstance(d, dict) and part in d:
+            d = d[part]
+        else:
+            return default
+    return d if d not in (None, "") else default
+
+
+def clean(v):
+    """Windows event fields arrive with doubled backslashes; show normal paths."""
+    return str(v).replace("\\\\", "\\").strip()
+
+
+def basename(path):
+    return re.split(r"[\\/]", clean(path))[-1] if path else ""
+
+
+def dirname(path):
+    parts = re.split(r"[\\/]", clean(path))
+    return "\\".join(parts[:-1]) if len(parts) > 1 else ""
+
+
+def eventdata(alert):
+    """Windows event fields with normalised keys: 'threat Name' -> 'threatname'."""
+    ev = get(alert, "data.win.eventdata", {}) or {}
+    return {k.replace(" ", "").lower(): v for k, v in ev.items() if v not in (None, "")}
+
+
+def local_time(ts, tz="UTC"):
+    """'2026-10-07T10:58:25.123+0000' -> '7 Oct 2026, 12:58 (CEST)'."""
+    try:
+        m = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?([+-]\d{4}|Z)?$", ts or "")
+        t = datetime.strptime(m.group(1) + (m.group(2) or "+0000").replace("Z", "+0000"),
+                              "%Y-%m-%dT%H:%M:%S%z")
+        try:
+            from zoneinfo import ZoneInfo
+            lt = t.astimezone(ZoneInfo(tz))
+        except Exception:
+            lt = t.astimezone(timezone.utc)
+        return f"{lt.day} {lt:%b %Y, %H:%M} ({lt:%Z})"
+    except (AttributeError, ValueError, TypeError):
+        return ts or "unknown"
+
+
+# Programs that legitimately unpack/drop files in Temp or AppData; used only as a hint.
+KNOWN_PROGRAMS = {
+    "msedge.exe": "Microsoft Edge browser",
+    "msedgewebview2.exe": "Microsoft Edge WebView2 (part of Windows, used by many apps)",
+    "microsoftedgeupdate.exe": "Microsoft Edge updater",
+    "msmpeng.exe": "Microsoft Defender antivirus",
+    "mpcmdrun.exe": "Microsoft Defender antivirus",
+    "onedrive.exe": "Microsoft OneDrive",
+    "onedrivesetup.exe": "Microsoft OneDrive updater",
+    "ms-teams.exe": "Microsoft Teams",
+    "teams.exe": "Microsoft Teams",
+    "chrome.exe": "Google Chrome browser",
+    "googleupdate.exe": "Google updater",
+    "firefox.exe": "Mozilla Firefox browser",
+    "updater.exe": "a program updater",
+    "maintenanceservice.exe": "Mozilla Firefox updater",
+    "trustedinstaller.exe": "Windows Update",
+    "tiworker.exe": "Windows Update",
+    "msiexec.exe": "Windows Installer (installing a program)",
+    "explorer.exe": "Windows Explorer (you copied or saved a file)",
+    "svchost.exe": "a Windows service",
+}
+TRUSTED_DIRS = re.compile(r"(?i)^c:\\(program files( \(x86\))?|windows)\\")
+
+
+def details(alert):
+    """Key facts as (label, value) rows, only the ones that exist."""
+    ev = eventdata(alert)
+    rows = []
+
+    def add(label, value):
+        value = clean(value) if value else ""
+        if value and (label, value) not in rows:
+            rows.append((label, value))
+
+    add("Program", ev.get("image") or ev.get("processname") or get(alert, "data.process.name"))
+    add("Command", ev.get("commandline"))
+    add("Started by", ev.get("parentimage"))
+    add("Threat", ev.get("threatname"))
+    add("Defender did", ev.get("actionname"))
+    add("File", ev.get("targetfilename") or re.sub(r"^file:_", "", str(ev.get("path", "")))
+        or get(alert, "syscheck.path"))
+    add("Device", ev.get("deviceinstanceid") or ev.get("devicedescription") or ev.get("description"))
+    add("Driver", ev.get("drivername"))
+    add("Registry", ev.get("targetobject"))
+    add("Domain", ev.get("queryname"))
+    add("Answer", ev.get("queryresults"))
+    add("Windows user", ev.get("user") or ev.get("targetusername") or ev.get("subjectusername"))
+    add("Account", get(alert, "data.dstuser") or get(alert, "data.srcuser"))
+    add("From IP", get(alert, "data.srcip") or ev.get("ipaddress") or ev.get("sourceip"))
+    add("To IP", ev.get("destinationip"))
+    if get(alert, "data.alert.signature"):
+        add("Signature", f"{get(alert, 'data.alert.signature')} (sid {get(alert, 'data.alert.signature_id')})")
+        add("Category", get(alert, "data.alert.category"))
+        add("Connection", f"{get(alert, 'data.src_ip')}:{get(alert, 'data.src_port')} -> "
+                          f"{get(alert, 'data.dest_ip')}:{get(alert, 'data.dest_port')} "
+                          f"{get(alert, 'data.proto')} {get(alert, 'data.app_proto')}".strip())
+        add("Website", get(alert, "data.http.hostname") or get(alert, "data.tls.sni")
+            or get(alert, "data.dns.query.0.rrname"))
+    fired = get(alert, "rule.firedtimes")
+    if fired and str(fired) != "1":
+        add("Times seen", f"{fired} times")
+    return rows
+
+
+def usb_name(ev):
+    """'USBSTOR\\Disk&Ven_SanDisk&Prod_Ultra&Rev_1.00\\4C53...' -> 'SanDisk Ultra (USB storage)'."""
+    dev = clean(ev.get("deviceinstanceid", ""))
+    if not dev:
+        return clean(ev.get("devicedescription") or ev.get("description") or "")
+    ven = re.search(r"Ven_([^&\\]+)", dev, re.I)
+    prod = re.search(r"Prod_([^&\\]+)", dev, re.I)
+    if ven or prod:
+        name = " ".join(x.group(1).replace("_", " ") for x in (ven, prod) if x)
+        return f"{name} (USB storage)"
+    ids = re.search(r"VID_([0-9A-F]{4})&PID_([0-9A-F]{4})", dev, re.I)
+    if ids:
+        return f"USB device, vendor ID {ids.group(1)}, product ID {ids.group(2)}"
+    return dev
+
+
+# --- plain-language explanation per alert type ----------------------------------------------
+
+def explain(alert):
+    """Return (short title, what happened, why it matters, verdict hint, [options])."""
+    rid = str(get(alert, "rule.id"))
+    groups = set(get(alert, "rule.groups", []) or [])
+    desc = re.sub(r"^URGENT:\s*", "", str(get(alert, "rule.description", "Unknown event")))
+    ev = eventdata(alert)
+    prog = basename(ev.get("image", ""))
+    prog_path = clean(ev.get("image", ""))
+    target = basename(ev.get("targetfilename", ""))
+    hint = ""
+    if prog:
+        known = KNOWN_PROGRAMS.get(prog.lower())
+        if known and TRUSTED_DIRS.match(prog_path):
+            hint = (f"Probably harmless: {prog} is {known}, running from its normal folder "
+                    f"({dirname(prog_path)}).")
+        elif known:
+            hint = (f"Check this: {prog} is normally {known}, but here it runs from an unusual "
+                    f"folder ({dirname(prog_path) or 'unknown'}). That is a common malware trick.")
+        elif not TRUSTED_DIRS.match(prog_path):
+            hint = f"Check this: {prog} is not a program I recognise, and it runs from outside Program Files / Windows."
+
+    if rid == "62123" or "virus" in groups or "defender" in groups and "malware" in desc.lower():
+        return ("Malware detected",
+                f"Microsoft Defender found malware: {ev.get('threatname') or desc}.",
+                "Malware can steal passwords, encrypt your files or let someone control the laptop.",
+                "",
+                ["Open Windows Security > Virus & threat protection > Protection history and check "
+                 "the action says 'Quarantined' or 'Removed'.",
+                 "If it says 'Allowed' or 'Failed', disconnect the laptop from the internet and run "
+                 "a Full scan (and a Microsoft Defender Offline scan).",
+                 "If the file came from a download or email you just opened, delete the download and "
+                 "do not run it again.",
+                 "If it keeps coming back, change your important passwords from ANOTHER device."])
+
+    if rid in ("100230", "100231", "100233", "100234"):
+        what = {"100230": "A Windows event log was cleared.",
+                "100231": "The Windows audit policy (what Windows records in its logs) was changed.",
+                "100233": "Microsoft Defender real-time protection was switched off.",
+                "100234": "The AutoPlay / AutoRun policy in the registry was changed (it must stay OFF)."}[rid]
+        return ("Security switched off or logs wiped",
+                what + (f" Account: {ev.get('subjectusername') or ev.get('user')}."
+                         if ev.get("subjectusername") or ev.get("user") else ""),
+                "Attackers do this to hide what they did or to stop antivirus from catching them. "
+                "Normal users almost never do it.",
+                "",
+                ["Was it you (or Claude's setup steps, or a Windows update you just ran)? Then nothing to do.",
+                 "If not: disconnect the laptop from the internet now.",
+                 "Turn Defender back on: Windows Security > Virus & threat protection > Real-time protection On.",
+                 "Run a Microsoft Defender Full scan and forward this email to Claude."])
+
+    if rid in ("100232", "60154"):
+        who = ev.get("targetusername") or ev.get("membername") or "unknown"
+        what = ("A new Windows user account was created or a disabled one turned back on"
+                if rid == "100232" else "The Administrators group was changed (someone got or lost admin rights)")
+        return ("User account or admin rights changed",
+                f"{what}: {who}. Done by: {ev.get('subjectusername', 'unknown')}.",
+                "A hidden extra account or admin rights is how attackers keep control of a laptop.",
+                "",
+                ["Did you (or someone you know) just add a user or give admin rights? Then nothing to do.",
+                 "If not: Settings > Accounts > Other users, remove the account you don't know.",
+                 "Change the Windows password and forward this email to Claude."])
+
+    if "agent_flooding" in groups:
+        return ("Wazuh agent overloaded",
+                "The Wazuh agent on this laptop had more events than it could send, so some were dropped "
+                "for a short time. Wazuh sends a 'back to normal' event (rule 205) when it recovers.",
+                "Usually harmless: it happens after a restart (the agent catches up on old logs) or during a "
+                "burst of activity (big install, Windows Sandbox starting). Repeated floods with no reason "
+                "can mean something is generating noise on purpose to hide in it.",
+                "",
+                ["Did you just restart, install or update something? Then nothing to do.",
+                 "If it happens again and again: forward this email to Claude to raise the agent buffer "
+                 "or quiet the noisy log source.",
+                 "If you weren't using the laptop at that time: run a Microsoft Defender Full scan."])
+
+    if rid in ("100221", "100210", "100101", "100100") or "usb" in desc.lower():
+        return ("New USB device",
+                f"A USB device this laptop has never seen before was plugged in: {usb_name(ev) or desc}.",
+                "A USB stick you don't own can carry malware, and a fake 'keyboard' USB can type commands by itself.",
+                "",
+                ["Was it you (phone, stick, mouse, charger cable)? Then nothing to do.",
+                 "If not: unplug it and ask who had access to the laptop.",
+                 "Never open files from a USB stick you found or got by surprise."])
+
+    if rid == "100111" or "credential" in desc.lower() or "lsass" in desc.lower():
+        return ("Password theft attempt",
+                f"A program tried to read saved passwords from Windows memory (credential dumping): {desc}.",
+                "This is what attackers do right after they get in, to take over your accounts. Treat it as serious.",
+                hint,
+                ["Disconnect the laptop from the internet (Wi-Fi off) now.",
+                 "Run a Microsoft Defender Full scan and an Offline scan.",
+                 "From ANOTHER device, change your email and bank passwords and check 2FA is on.",
+                 f"If you don't recognise '{prog or 'the program'}', don't reconnect until it's cleaned up."])
+
+    if rid == "100250":
+        parent = basename(ev.get("parentimage", "")) or "the browser"
+        return ("Browser started a command tool",
+                f"{parent} started {prog or 'a command tool'}.",
+                "Browsers almost never start command lines or script tools in normal use."
+                " A malicious web page, extension or browser exploit does exactly this to run its own commands.",
+                "",
+                ["Were you doing something that opens a terminal from the browser on purpose? Then nothing to do; "
+                 "forward this email to Claude to allow that exact case.",
+                 "If not: disconnect the laptop from the internet (Wi-Fi off) now.",
+                 "In the browser, open the extensions page and remove any extension you don't recognise or "
+                 "installed recently.",
+                 "Run a Microsoft Defender Full scan and forward this email to Claude."])
+
+    if rid == "100252":
+        path = clean(get(alert, "syscheck.path") or get(alert, "syscheck.value_name") or "")
+        return ("New browser helper program registered",
+                f"A browser 'native messaging host' was added or changed in the registry: {path or desc}.",
+                "A native messaging host lets a browser extension start a program on this laptop. Password "
+                "managers and Office add-ins use it, and so does a malicious extension that wants to run code "
+                "outside the browser.",
+                "",
+                ["Did you just install a program with a browser add-on (password manager, Office, Adobe, "
+                 "Google Drive)? Then it is probably that: forward this email to Claude to add it to the known list.",
+                 "If not: in Brave, Chrome and Edge open the extensions page and remove any extension you don't "
+                 "recognise or installed recently.",
+                 "Run a Microsoft Defender Full scan and forward this email to Claude."])
+
+    if rid == "100260":
+        dom = clean(ev.get("queryname", "")) or "unknown"
+        return ("Known malware domain looked up",
+                f"{prog or 'A program'} looked up {dom}, a domain on the malware/phishing blocklists "
+                "(malware-filter: URLhaus malware sites + phishing sites).",
+                "Malware fetches its next stage from such sites, and phishing pages copy real login pages to steal "
+                "passwords. In a browser it can also be a bad ad or hacked website: less serious, still worth a check.",
+                hint,
+                ["Look at 'Program' below. A browser (Brave, Edge, Firefox): close that tab, don't run anything you "
+                 "just downloaded, and if you typed a password on that page, change it from another device.",
+                 "Any other program, or one you don't recognise: disconnect from Wi-Fi now.",
+                 "Run a Microsoft Defender Full scan and forward this email to Claude to check the domain "
+                 "and what that program did next."])
+
+    if rid == "100162":
+        ip = ev.get("ipaddress", "unknown")
+        return ("Remote Desktop login",
+                f"Someone logged in to this laptop over Remote Desktop as {ev.get('targetusername', '?')} "
+                f"from {ip}.",
+                "Remote Desktop gives full control of the laptop. If it wasn't you, someone else has your password.",
+                "",
+                ["Was it you (connecting from another PC)? Then nothing to do.",
+                 "If not: disconnect the laptop from the internet, then change the Windows password "
+                 "from the laptop itself.",
+                 "Turn Remote Desktop off if you don't use it: Settings > System > Remote Desktop > Off.",
+                 "Forward this email to Claude to check what that account did next."])
+
+    if rid == "100240" or "suricata" in groups:
+        sig = get(alert, "data.alert.signature", desc)
+        return ("Suricata: dangerous network traffic",
+                f"Suricata (the network monitor on this laptop) matched a high-severity rule: {sig}.",
+                "High-severity rules are about malware calling home, exploits or known-bad servers, "
+                "not everyday traffic.",
+                "",
+                ["Look at 'Website' and 'Connection' below: do you recognise the site or program?",
+                 "If not: disconnect from Wi-Fi and run a Microsoft Defender Full scan.",
+                 "Forward this email to Claude: it can look up the signature and what else this "
+                 "laptop did at that time."])
+
+    if rid == "100211" or {"authentication_failures", "win_authentication_failed"} & groups:
+        return ("Many failed logins on Windows",
+                f"Windows saw many wrong passwords in a row or locked an account: {desc}.",
+                "Someone (or a program) may be guessing the password of this laptop.",
+                "",
+                ["Was it you mistyping your PIN/password? Then nothing to do.",
+                 "If not: check 'Account' and 'From IP' below. An IP from the internet means "
+                 "Remote Desktop or file sharing is exposed: turn it off.",
+                 "Make sure the Windows account has a strong password."])
+
+    if rid == "100212" or "sshd" in groups:
+        return ("SSH attack on the server",
+                f"Someone is guessing SSH passwords on the Wazuh server: {desc}.",
+                "If a guess works, they control the server. It should only be reachable over WireGuard.",
+                "",
+                ["If 'From IP' is in your WireGuard subnet, it's one of your own devices: check which one.",
+                 "If it's a public IP: SSH is reachable from the internet. Check the cloud firewall "
+                 "only allows SSH from WireGuard.",
+                 "Confirm password login is off: 'PasswordAuthentication no' in /etc/ssh/sshd_config."])
+
+    if rid == "92213" or "dropped" in desc.lower():
+        where = dirname(ev.get("targetfilename", "")) or "a temporary folder"
+        return ("Program file dropped in Temp/AppData",
+                f"{prog or 'A program'} saved a program file ({target or 'unknown'}) in {where}.",
+                "Malware often hides there, but browsers and updaters also unpack files there every day.",
+                hint,
+                ["If it says 'Probably harmless': nothing to do. Tell Claude and it will stop alerting on it.",
+                 "If you don't recognise the program: right-click the file > Scan with Microsoft Defender, "
+                 "or upload it to virustotal.com.",
+                 "If the scan finds something: disconnect from the internet and run a Full scan."])
+
+    if rid == "100150" or "persistence" in desc.lower() or "run key" in desc.lower():
+        return ("Program set to start automatically",
+                f"A program added itself to Windows startup: {desc}.",
+                "Malware does this to survive a restart. Installers do it too.",
+                hint,
+                ["Did you just install or update something? Then probably fine.",
+                 "If not: open Task Manager > Startup apps and disable what you don't recognise.",
+                 "Scan the program file with Microsoft Defender."])
+
+    # Generic fallback, using MITRE ATT&CK info when the rule has it.
+    tactics = ", ".join(get(alert, "rule.mitre.tactic", []) or [])
+    techniques = ", ".join(get(alert, "rule.mitre.technique", []) or [])
+    why = (f"Attackers use this for: {tactics.lower()}" + (f" ({techniques})" if techniques else "") + "."
+           if tactics else "Wazuh rates this as high severity (level %s of 15)." % get(alert, "rule.level"))
+    return (desc[:70],
+            f"{desc}.",
+            why,
+            hint,
+            ["If you were doing something that explains it (installing, updating, admin work), it's likely fine.",
+             "If not: check the program and file below, and scan them with Microsoft Defender.",
+             "Not sure? Forward this email to Claude and ask."])
+
+
+# --- building the email ---------------------------------------------------------------------
+
+def build(alert, tz="UTC"):
+    title, what, why, hint, options = explain(alert)
+    agent = get(alert, "agent.name", "unknown")
+    aid = get(alert, "agent.id", "?")
+    computer = get(alert, "data.win.system.computer")
+    level = get(alert, "rule.level", "?")
+    prog = basename(get(alert, "data.win.eventdata.image", ""))
+
+    subject = f"Wazuh Alert - {agent} - {title}"
+    if prog and prog.lower() not in title.lower():
+        subject += f" ({prog})"
+
+    out = [title.upper(), "=" * len(title), ""]
+    if hint:
+        out += [hint, ""]
+    out += [
+        "WHAT HAPPENED",
+        f"  {what}",
+        "",
+        f"  Computer: {agent}" + (f" ({computer})" if computer else "") + f", agent {aid}",
+        f"  When:     {local_time(get(alert, 'timestamp'), tz)}",
+        f"  Level:    {level} of 15",
+        "",
+        "WHY IT MATTERS",
+        f"  {why}",
+        "",
+        "YOUR OPTIONS",
+    ]
+    out += [f"  {i}. {o}" for i, o in enumerate(options, 1)]
+    rows = details(alert)
+    if rows:
+        out += ["", "DETAILS"]
+        width = max(len(k) for k, _ in rows)
+        out += [f"  {k + ':':<{width + 1}}  {v}" for k, v in rows]
+
+    mitre = list(zip(get(alert, "rule.mitre.id", []) or [], get(alert, "rule.mitre.technique", []) or []))
+    out += ["", "", "-" * 60, "TECHNICAL DETAILS (for Claude or later)", "-" * 60,
+            f"Rule:      {get(alert, 'rule.id')} - {get(alert, 'rule.description')}",
+            f"Groups:    {', '.join(get(alert, 'rule.groups', []) or [])}"]
+    if mitre:
+        out.append("MITRE:     " + ", ".join(f"{i} {t}" for i, t in mitre))
+    out += [f"Location:  {get(alert, 'location')}",
+            f"Alert ID:  {get(alert, 'id')}", ""]
+    ev = get(alert, "data.win.eventdata", {}) or {}
+    if ev:
+        out.append("Event fields:")
+        out += [f"  {k}: {clean(v)}" for k, v in ev.items() if v not in (None, "")]
+        out.append("")
+    full = get(alert, "full_log")
+    if full and not ev:
+        out += ["Log:", clean(full)[:4000], ""]
+    return subject, "\n".join(out) + "\n"
+
+
+# --- flood protection -----------------------------------------------------------------------
+
+def allowed(alert, conf, now=None):
+    """At most MAX_PER_HOUR emails, and the same rule+laptop at most once per REPEAT_MINUTES."""
+    now = now or time.time()
+    try:
+        with open(STATE) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    sent = [t for t in state.get("sent", []) if now - t < 3600]
+    last = {k: t for k, t in state.get("last", {}).items() if now - t < 86400}
+    key = f"{get(alert, 'rule.id')}|{get(alert, 'agent.id')}"
+    if get(alert, "data.alert.signature_id"):  # Suricata: each signature has its own 30-min window
+        key += f"|{get(alert, 'data.alert.signature_id')}"
+    ok = len(sent) < int(conf["MAX_PER_HOUR"]) and now - last.get(key, 0) >= 60 * int(conf["REPEAT_MINUTES"])
+    if ok:
+        sent.append(now)
+        last[key] = now
+    try:
+        with open(STATE, "w") as f:
+            json.dump({"sent": sent, "last": last}, f)
+    except OSError:
+        pass
+    return ok
+
+
+def send(subject, body, conf):
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = formataddr(("Wazuh Alert", conf["MAIL_FROM"]))
+    msg["To"] = conf["MAIL_TO"]
+    msg.set_content(body)
+    subprocess.run([SENDMAIL, "-t", "-oi", "-f", conf["MAIL_FROM"]], input=msg.as_bytes(),
+                   check=True, timeout=60)
+
+
+def main(argv):
+    dry = "--dry-run" in argv
+    args = [a for a in argv[1:] if a != "--dry-run"]
+    if not args:
+        sys.exit("usage: custom-email-alert [--dry-run] ALERT_FILE")
+    with open(args[0]) as f:
+        alert = json.load(f)
+    conf = load_conf()
+    agent = str(get(alert, "agent.name", ""))
+    rule = str(get(alert, "rule.id"))
+    rules = conf["SKIP_RULES"] + "," + conf.get("SKIP_RULES." + agent, "")
+    skip = {r.strip() for r in rules.split(",") if r.strip()}
+    if rule in skip or "vulnerability-detector" in (get(alert, "rule.groups", []) or []):
+        return
+    if conf.get("MUTE." + agent, "").lower() in ("yes", "true", "1"):
+        log(f"skipped (muted agent) rule {rule} agent {agent}")
+        return
+    min_level = conf.get("MIN_LEVEL." + agent, "")
+    if min_level.isdigit() and int(get(alert, "rule.level", 0) or 0) < int(min_level):
+        log(f"skipped (below MIN_LEVEL.{agent}={min_level}) rule {rule}")
+        return
+    conf = dict(conf, MAIL_TO=conf.get("MAIL_TO." + agent) or conf["MAIL_TO"])
+    subject, body = build(alert, conf["TIMEZONE"])
+    if dry:
+        print("Subject:", subject, "\n")
+        print(body)
+        return
+    if not conf["MAIL_FROM"] or not conf["MAIL_TO"]:
+        log(f"MAIL_FROM/MAIL_TO missing in {CONF}")
+        sys.exit(1)
+    if not allowed(alert, conf):
+        log(f"skipped (rate limit) rule {get(alert, 'rule.id')} agent {get(alert, 'agent.name')}")
+        return
+    send(subject, body, conf)
+    log(f"sent: {subject}")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv)
+    except Exception as e:  # never crash integratord silently
+        log(f"error: {e!r}")
+        raise

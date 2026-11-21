@@ -15,7 +15,7 @@ screenshots. The docs here only say where each one is kept.
 | `claude-ro` (API) | Claude MCP server | readonly | Password manager + `mcp-server/.env` on the PC |
 | `claude-idx-ro` (indexer) | Claude MCP server (alerts, vulnerabilities) | read on two index patterns | Password manager + `mcp-server/.env` on the PC (MCP part, coming later) |
 | Enrollment password | New agents on 1515 | can register agents only | Password manager + `/var/ossec/etc/authd.pass` |
-| Mail relay app password | Postfix, for alert emails | sends mail as that account | Password manager + `/etc/postfix/sasl_passwd.db` (email part, coming later) |
+| Mail relay app password | Postfix, for alert emails | sends mail as that account | Password manager + `/etc/postfix/sasl_passwd.db` ([03](03-email-alerts.md)) |
 
 Once every password is in the password manager, delete the install archive:
 `shred -u /root/wazuh-install-files.tar`.

@@ -1,0 +1,14 @@
+# /var/ossec/etc/email-alert.conf  (root:wazuh, 640) - read by /var/ossec/integrations/custom-email-alert
+# No secrets here: the mail relay password lives only in postfix (/etc/postfix/sasl_passwd.db).
+MAIL_FROM=you@gmail.com
+MAIL_TO=you@example.com
+MAX_PER_HOUR=10
+REPEAT_MINUTES=30
+TIMEZONE=UTC
+SKIP_RULES=23505,23506,100213
+
+# Per-agent settings (optional): KEY.<agent name>=value, agent name exactly as in agent_control -l
+# MUTE.LAB-VM=yes               # no emails at all from this agent
+# SKIP_RULES.LAPTOP-2=100221    # e.g. no new-USB emails for LAPTOP-2
+# MIN_LEVEL.LAPTOP-2=14         # only the most serious alerts
+# MAIL_TO.LAPTOP-2=someone@example.com

@@ -1,0 +1,205 @@
+<!-- /var/ossec/etc/rules/noise_tuning.xml : quiet known-harmless noise, mark urgent alerts (level 12+ = email) -->
+<group name="local,alert_tuning,">
+  <rule id="100200" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">__PSScriptPolicyTest_</field>
+    <description>PowerShell script policy test file (benign)</description>
+  </rule>
+  <rule id="100201" level="3">
+    <if_sid>92058</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\\System32\\+sdbinst\.exe"?\s+-m\s+-bg$</field>
+    <description>Windows built-in sdbinst background run (benign)</description>
+  </rule>
+  <rule id="100202" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)Program Files.*msedge(webview2)?\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)msedge_chrome_Unpacker_BeginUnzipping</field>
+    <description>Edge / WebView2 unpacking its own components in Temp (benign)</description>
+  </rule>
+  <!-- Updater that unpacks into Temp every day. Add your own updaters here the same way (see docs/05). -->
+  <rule id="100203" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^C:\\+Program Files( \(x86\))?\\+Microsoft Visual Studio\\+Installer\\+.*\\+BackgroundDownload\.exe$</field>
+    <description>Visual Studio Installer unpacking files (benign)</description>
+  </rule>
+  <!-- explorer.exe started by Windows itself as a COM server ("/factory,{GUID} -Embedding"). -->
+  <rule id="100204" level="3">
+    <if_sid>61640</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\Windows\\+System32\\+svchost\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)explorer\.exe"?\s+/factory,\{[0-9a-f-]+\}\s+-Embedding$</field>
+    <description>explorer.exe started by Windows as a COM server (benign)</description>
+  </rule>
+  <!-- smss.exe (Session Manager) starting a new session: Windows runs a child copy that starts winlogon.exe
+       with "-SpecialSession". Sysmon has no parent for it (the parent copy already exited), which trips 61632.
+       Only the real System32 path, that exact command line and SYSTEM are quieted. -->
+  <rule id="100205" level="3">
+    <if_sid>61632</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^C:\\+Windows\\+System32\\+smss\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)^\\+SystemRoot\\+System32\\+smss\.exe [0-9a-f]{8} [0-9a-f]{8} C:\\+WINDOWS\\+System32\\+WinLogon\.exe -SpecialSession$</field>
+    <field name="win.eventdata.user" type="pcre2">(?i)^NT AUTHORITY\\+SYSTEM$</field>
+    <description>Windows Session Manager starting a new session (benign)</description>
+  </rule>
+  <!-- From a 10-day review (318 alerts): genuine svchost / backgroundTaskHost / dllhost, but Sysmon logs
+       no parent (ParentImage "-", all-zero GUID), so 61618/61634/61638 can't confirm the parent. Quieted only when
+       everything else matches the known-good Windows baseline (SANS "Hunt Evil"): real System32/SysWOW64 path,
+       unknown parent, and the command line each one always has. A copy elsewhere, a known non-Windows parent,
+       or an odd command line (svchost without -k, dllhost without a COM id) still emails. -->
+  <rule id="100206" level="3">
+    <if_sid>61618</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^C:\\+Windows\\+System32\\+svchost\.exe$</field>
+    <field name="win.eventdata.parentProcessGuid" type="pcre2">^\{0{8}-0{4}-0{4}-0{4}-0{12}\}$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)^C:\\+WINDOWS\\+system32\\+svchost\.exe -k [A-Za-z]+( -p)?( -s \w+)?$</field>
+    <description>Windows service host (svchost -k) with no parent recorded by Sysmon (benign)</description>
+  </rule>
+  <rule id="100210" level="3">
+    <if_sid>61634, 61638</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^C:\\+Windows\\+(System32|SysWOW64)\\+(backgroundTaskHost|dllhost)\.exe$</field>
+    <field name="win.eventdata.parentProcessGuid" type="pcre2">^\{0{8}-0{4}-0{4}-0{4}-0{12}\}$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)^[\\"]*C:\\+WINDOWS\\+(system32|SysWOW64)\\+(backgroundTaskHost\.exe[\\"]* -ServerName:[\w.]+|DllHost\.exe[\\"]* /Processid:\{[0-9A-F-]{36}\})$</field>
+    <description>Windows background task / COM surrogate with no parent recorded by Sysmon (benign)</description>
+  </rule>
+  <!-- Browsers / builds unpacking DLLs or scripts into Temp (these were most level-15 alerts in a 10-day review). -->
+  <rule id="100207" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^C:\\+Program Files\\+(BraveSoftware\\+Brave-Browser\\+Application\\+brave|Google\\+Chrome\\+Application\\+chrome)\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+Temp\\+\w+_chrome_Unpacker_BeginUnzipping\d+_\d+\\</field>
+    <description>Brave / Chrome unpacking their own components in Temp (benign)</description>
+  </rule>
+  <rule id="100208" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^C:\\+Program Files\\+Microsoft Visual Studio\\+20\d\d\\+\w+\\+MSBuild\\+Current\\+Bin\\+(amd64\\+)?MSBuild\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+Temp\\+MSBuildTemp[^\\]+\\+tmp[0-9a-f]{32}(\.exec)?\.cmd$</field>
+    <description>Visual Studio MSBuild writing its build step script to Temp (benign)</description>
+  </rule>
+  <rule id="100211" level="12">
+    <if_sid>60204, 60115</if_sid>
+    <description>URGENT: Windows brute force or account lockout</description>
+  </rule>
+  <rule id="100212" level="12">
+    <if_sid>5712, 5720, 5763</if_sid>
+    <description>URGENT: SSH brute force on the server</description>
+  </rule>
+  <!-- New USB device: Windows logs Kernel-PnP event 400 only the first time it configures a device
+       (needs the Kernel-PnP/Configuration channel collected, see agent.conf in docs/04-windows-logging.md).
+       Parent is the severity group 60009-60012, not 60000: 60009 claims every INFORMATION event first. -->
+  <rule id="100220" level="3">
+    <if_sid>60009, 60010, 60011, 60012</if_sid>
+    <field name="win.system.channel">^Microsoft-Windows-Kernel-PnP/Configuration$</field>
+    <description>Windows device configuration event</description>
+  </rule>
+  <rule id="100221" level="12">
+    <if_sid>100220</if_sid>
+    <field name="win.system.eventID">^400$</field>
+    <field name="win.eventdata.deviceInstanceId" type="pcre2">(?i)^USB(STOR)?\\</field>
+    <description>URGENT: new USB device connected</description>
+  </rule>
+  <rule id="100213" level="13">
+    <if_sid>23506</if_sid>
+    <options>no_email_alert</options>
+    <description>$(vulnerability.cve) affects $(vulnerability.package.name)</description>
+  </rule>
+  <!-- Remote Desktop login (logon type 10). 92651 catches every 60106 logon first, so hang off both. -->
+  <rule id="100162" level="12">
+    <if_sid>60106, 92651</if_sid>
+    <field name="win.eventdata.logonType">^10$</field>
+    <description>Remote Desktop login to this laptop as $(win.eventdata.targetUserName) from $(win.eventdata.ipAddress)</description>
+    <mitre>
+      <id>T1021.001</id>
+    </mitre>
+  </rule>
+  <!-- Covering tracks / taking over: built-in rules are level 5-8, raise to email level -->
+  <rule id="100230" level="12">
+    <if_sid>63103, 63104</if_sid>
+    <description>URGENT: a Windows event log was cleared</description>
+    <mitre><id>T1070.001</id></mitre>
+  </rule>
+  <rule id="100231" level="12">
+    <if_sid>60112</if_sid>
+    <description>URGENT: Windows audit policy changed (logging turned off or on)</description>
+    <mitre><id>T1562.002</id></mitre>
+  </rule>
+  <rule id="100232" level="12">
+    <if_sid>60109</if_sid>
+    <description>URGENT: new or re-enabled Windows user account $(win.eventdata.targetUserName)</description>
+    <mitre><id>T1136.001</id></mitre>
+  </rule>
+  <rule id="100233" level="12">
+    <if_sid>62152</if_sid>
+    <description>URGENT: Microsoft Defender real-time protection was turned off</description>
+    <mitre><id>T1562.001</id></mitre>
+  </rule>
+  <rule id="100234" level="12">
+    <if_sid>750, 751, 752</if_sid>
+    <match type="pcre2">(?i)CurrentVersion\\Policies\\Explorer</match>
+    <description>URGENT: AutoPlay / AutoRun policy changed in the registry</description>
+    <mitre><id>T1091</id></mitre>
+  </rule>
+  <!-- Windows' own safety wrapper that blocks Invoke-Expression/Invoke-Command
+       in scripts (defines functions only, no remote target). Matches that exact module text. -->
+  <rule id="100235" level="3">
+    <if_sid>91823</if_sid>
+    <field name="win.eventdata.scriptBlockText" type="pcre2">(?s)throw 'Invoke-Expression cannot be used in a script'.*Export-ModuleMember\s+-Function\s+@\(\s*'Invoke-Expression'\s+'Invoke-Command'\s*\)\s*$</field>
+    <description>Windows built-in PowerShell wrapper restricting Invoke-Command (harmless)</description>
+  </rule>
+  <!-- Suricata on a Windows laptop (docs/11-suricata.md). Wazuh's own rule 86601 keeps
+       every Suricata alert at level 3 (dashboard only). Severity 1 (malware, exploit, C2) emails;
+       ET INFO / POLICY / HUNTING are informational even at severity 1, so they stay on the dashboard.
+       Add your own harmless signatures to the 100241 regex (example in docs/11). -->
+  <rule id="100240" level="12">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^1$</field>
+    <description>URGENT: Suricata high-severity alert - $(alert.signature)</description>
+    <group>ids,suricata,</group>
+  </rule>
+  <rule id="100241" level="3">
+    <if_sid>100240</if_sid>
+    <field name="alert.signature">^ET INFO |^ET POLICY |^ET HUNTING |^GPL INFO </field>
+    <description>Suricata: informational high-severity alert - $(alert.signature)</description>
+    <group>ids,suricata,</group>
+  </rule>
+  <!-- Browser starts a shell or script tool (Sysmon event 1, so only on agents with Sysmon).
+       Over 90 days of real use, browsers only ever started themselves, installers from Downloads,
+       identity_helper.exe and desktop apps, never any of these, so this should stay silent
+       unless a page, extension or exploit makes the browser run commands.
+       Parents: the catch-all 100110 AND every Wazuh process-creation rule below level 12, because the
+       first matching child of 61603 wins (in testing, brave.exe -> cmd.exe went to 92052, level 4,
+       so a 100110-only rule never saw it). Level 12+ built-ins already email by themselves. -->
+  <rule id="100250" level="12">
+    <if_sid>100110, 92000, 92004, 92005, 92006, 92007, 92020, 92021, 92022, 92023, 92025, 92027, 92028, 92030, 92031, 92032, 92042, 92052, 92061, 92063, 92065, 92066, 92068, 92069, 92072, 92076, 92077, 92078</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\+(chrome|msedge|brave|firefox|opera|vivaldi)\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|schtasks|bash|wsl|curl|forfiles|hh|installutil|msbuild|regasm|regsvcs|cmstp|msxsl)\.exe$</field>
+    <description>URGENT: browser started $(win.eventdata.image)</description>
+    <group>browser,</group>
+    <mitre>
+      <id>T1189</id>
+      <id>T1059</id>
+    </mitre>
+  </rule>
+  <!-- Browser extensions and native messaging hosts (syscheck block in agent.conf,
+       docs/12-browser-watch.md). Extension installs AND updates add a new manifest.json, so they stay
+       on the dashboard. A native messaging host lets an extension start a program on the laptop:
+       a new or changed one emails. -->
+  <rule id="100251" level="7">
+    <if_sid>550, 553, 554</if_sid>
+    <match type="pcre2">(?i)\\User Data\\[^\\]+\\Extensions\\[a-p]{32}\\</match>
+    <description>Browser extension added, updated or removed</description>
+    <group>browser,</group>
+  </rule>
+  <rule id="100252" level="12">
+    <if_sid>594, 598, 750, 752</if_sid>
+    <match type="pcre2">(?i)\\NativeMessagingHosts</match>
+    <description>URGENT: browser native messaging host added or changed</description>
+    <group>browser,</group>
+    <mitre><id>T1176</id></mitre>
+  </rule>
+  <!-- DNS watch (docs/13-dns-watch.md): Sysmon 22 = every DNS lookup on the laptop (about 3,000 a day,
+       stored nowhere: 61650 is level 0). Email only when the domain is on the malware-filter malware/phishing lists, refreshed
+       daily by server/wazuh-bad-domains.sh. Needs <list>etc/lists/bad-domains</list> in ossec.conf <ruleset>. -->
+  <rule id="100260" level="12">
+    <if_sid>61650</if_sid>
+    <list field="win.eventdata.queryName" lookup="match_key">etc/lists/bad-domains</list>
+    <description>URGENT: lookup of a known malware domain $(win.eventdata.queryName)</description>
+    <group>dns,</group>
+    <mitre><id>T1071.004</id></mitre>
+  </rule>
+</group>

@@ -1,0 +1,46 @@
+<!-- /var/ossec/etc/rules/local_rules.xml : own Sysmon rules (need Sysmon on the Windows agent).
+     Known-harmless exceptions and URGENT (email) rules live in noise_tuning.xml.
+     Level guide: 3 = keep as history only, 7-10 = worth a look, 12+ = email. -->
+<group name="local,windows,sysmon,">
+
+  <!-- Every process start. History for investigations only (was level 5, ~3,000/day). -->
+  <rule id="100110" level="3">
+    <if_sid>61603</if_sid>
+    <description>Sysmon process created: $(win.eventdata.image)</description>
+  </rule>
+
+  <!-- Credential dumping. Child of 100110 (a sibling under 61603 was never reached).
+       Matches the tool / technique, not plain "lsass", which also starts at every boot. -->
+  <rule id="100111" level="12">
+    <if_sid>100110</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)mimikatz|procdump.*lsass|sekurlsa|comsvcs(\.dll)?.{0,40}minidump|lsass.{0,20}\.dmp</field>
+    <description>URGENT: possible password theft (credential dumping) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1003.001</id>
+    </mitre>
+  </rule>
+
+  <!-- Removed 100120 "DLL loaded from user directory": its parent 61607 is Sysmon event 5 (process
+       exited), not event 7 (DLL load), so it only listed apps closing from AppData. -->
+
+  <rule id="100130" level="8">
+    <if_sid>61605</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(powershell|pwsh|cmd)\.exe$</field>
+    <description>PowerShell or cmd made a network connection to $(win.eventdata.destinationIp)</description>
+  </rule>
+
+  <!-- Executable/script created anywhere. Duplicates Wazuh 92213 (which covers risky folders). History only. -->
+  <rule id="100140" level="3">
+    <if_sid>61613</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\.(exe|ps1|bat|cmd|vbs|js|scr)$</field>
+    <description>Executable or script file created: $(win.eventdata.targetFilename)</description>
+  </rule>
+
+  <!-- Removed 100150 "registry persistence": parent 61612 is not a registry event, so it never fired.
+       Wazuh's own Sysmon rules (registry Run keys) and FIM registry monitoring cover this. -->
+
+  <!-- Removed 100170 "Defender detected malware": parent 62102 is Defender's error group (no memory,
+       reboot required...), not detections. Wazuh's own rule 62123 (event 1116, level 12) already alerts
+       on detections, once agent.conf collects the Defender Operational channel (see docs/04-windows-logging.md). -->
+
+</group>
