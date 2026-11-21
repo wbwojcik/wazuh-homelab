@@ -1,3 +1,7 @@
 # Server files run on Linux: keep LF line endings even in a Windows checkout
 server/** text eol=lf
 *.sh text eol=lf
+
+# Count these in GitHub's language bar
+*.ps1 linguist-detectable linguist-language=PowerShell
+*.sh linguist-detectable
