@@ -1,0 +1,40 @@
+<!-- Append to /var/ossec/etc/shared/default/agent.conf on the manager. Pushed to every Windows agent
+     in the "default" group. See docs/04-windows-logging.md. -->
+
+<!-- New USB devices: Kernel-PnP event 400 (rule 100221) -->
+<agent_config os="Windows">
+  <localfile>
+    <location>Microsoft-Windows-Kernel-PnP/Configuration</location>
+    <log_format>eventchannel</log_format>
+  </localfile>
+</agent_config>
+
+<!-- Microsoft Defender detections (Wazuh rule 62123) and Defender turned off (100233) -->
+<agent_config os="Windows">
+  <localfile>
+    <location>Microsoft-Windows-Windows Defender/Operational</location>
+    <log_format>eventchannel</log_format>
+  </localfile>
+</agent_config>
+
+<agent_config os="Windows">
+  <!-- PowerShell script text (event 4104); only logged where script block logging is on (windows/audit-settings.ps1) -->
+  <localfile>
+    <location>Microsoft-Windows-PowerShell/Operational</location>
+    <log_format>eventchannel</log_format>
+    <query>Event/System[EventID=4104]</query>
+  </localfile>
+  <!-- AutoPlay policy must stay off: a change fires rule 100234 (level 12) -->
+  <syscheck>
+    <windows_registry arch="both">HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer</windows_registry>
+  </syscheck>
+</agent_config>
+
+<!-- Bigger agent buffer: the defaults (5000 events, 500/s) overflow on a busy laptop with Sysmon -->
+<agent_config os="Windows">
+  <client_buffer>
+    <disabled>no</disabled>
+    <queue_size>25000</queue_size>
+    <events_per_second>1000</events_per_second>
+  </client_buffer>
+</agent_config>

@@ -100,7 +100,7 @@ tail -n 5000 /var/ossec/logs/alerts/alerts.json | grep '"level":1[2-5]' | tail -
 /usr/local/bin/wazuh-vuln-digest.py --dry-run
 ```
 
-Real test: plug a USB stick into a laptop (needs the Windows logging part, coming next). Or download the
+Real test: plug a USB stick into a laptop (needs [04](04-windows-logging.md) done first). Or download the
 [EICAR test file](https://www.eicar.org/download-anti-malware-testfile/) and let Defender catch it.
 
 ## What sends an email

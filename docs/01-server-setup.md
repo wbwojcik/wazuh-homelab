@@ -148,7 +148,7 @@ NET START WazuhSvc
 ```
 
 On the server, `/var/ossec/bin/agent_control -l` lists it as Active within a minute.
-Without the password, authd answers `ERROR: Invalid password`.
+Without the password, authd answers `ERROR: Invalid password`. Next: [Windows logging](04-windows-logging.md).
 
 ## 7. Memory: add a swap file
 
