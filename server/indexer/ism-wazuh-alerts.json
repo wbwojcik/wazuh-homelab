@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Delete wazuh-alerts-* daily indices older than 90 days (homelab retention, see docs/06-index-retention.md)",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [{ "state_name": "delete", "conditions": { "min_index_age": "90d" } }]
+      },
+      {
+        "name": "delete",
+        "actions": [{ "delete": {} }],
+        "transitions": []
+      }
+    ],
+    "ism_template": [{ "index_patterns": ["wazuh-alerts-*"], "priority": 100 }]
+  }
+}
